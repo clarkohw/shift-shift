@@ -34,9 +34,6 @@ local lastShift = 0
 local prevFlags = {}
 local eventTap = nil
 
--- Coroutine for event handling
-local eventCoroutine = nil
-
 -- Logging function with timestamp - only log when debug is enabled
 local debug = false
 local function log(message)
@@ -78,73 +75,65 @@ local function checkEventTapStatus()
     end
 end
 
--- Create the event tap with coroutine
-local function createEventTap()
-    eventCoroutine = coroutine.wrap(function()
-        eventTap = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, function(e)
-            -- Check if event tap is still enabled
-            if not eventTap:isEnabled() then
-                log("ERROR: Event tap is disabled during callback!")
-                return false
-            end
-            
-            -- Get current frontmost application
-            local frontApp = hs.application.frontmostApplication()
-            if not frontApp then
-                log("WARNING: No frontmost application detected")
-                prevFlags = e:getFlags()
-                return false
-            end
-            
-            local bundleID = frontApp:bundleID()
-            log(string.format("Event received - Frontmost app: %s (%s)", 
-                frontApp:name() or "Unknown", bundleID or "No bundle ID"))
-            
-            -- Check if the current app is configured
-            local appConfig = getAppConfigByBundleID(bundleID)
-            if not appConfig then
-                log("App not configured - ignoring event")
-                prevFlags = e:getFlags()
-                return false
-            end
-            
-            local flags = e:getFlags()
-            
-            -- Detect shift key press (not release)
-            if flags.shift and not prevFlags.shift then
-                local now = hs.timer.secondsSinceEpoch()
-                local timeSinceLastShift = now - lastShift
-                
-                if timeSinceLastShift < config.threshold then
-                    log(string.format("Double-shift detected in %s! Triggering %s", 
-                        frontApp:name(), appConfig.action.description))
-                    
-                    -- Use direct event posting for better performance
-                    hs.eventtap.event.newKeyEvent(appConfig.action.modifiers, appConfig.action.key, true):post()
-                    hs.timer.usleep(1000) -- Minimal delay
-                    hs.eventtap.event.newKeyEvent(appConfig.action.modifiers, appConfig.action.key, false):post()
-                end
-                
-                lastShift = now
-            end
-            
-            prevFlags = flags
-            coroutine.applicationYield()
-            return false
-        end)
-        
-        if eventTap:start() then
-            log("Event tap started successfully")
-        else
-            log("ERROR: Failed to start event tap!")
-        end
-    end)
+-- Handle shift key events
+local function handleShiftKey(e)
+    -- Check if event tap is still enabled
+    if not eventTap:isEnabled() then
+        log("ERROR: Event tap is disabled during callback!")
+        return false
+    end
     
-    eventCoroutine()
+    -- Get current frontmost application
+    local frontApp = hs.application.frontmostApplication()
+    if not frontApp then
+        log("WARNING: No frontmost application detected")
+        prevFlags = e:getFlags()
+        return false
+    end
+    
+    local bundleID = frontApp:bundleID()
+    log(string.format("Event received - Frontmost app: %s (%s)", 
+        frontApp:name() or "Unknown", bundleID or "No bundle ID"))
+    
+    -- Check if the current app is configured
+    local appConfig = getAppConfigByBundleID(bundleID)
+    if not appConfig then
+        log("App not configured - ignoring event")
+        prevFlags = e:getFlags()
+        return false
+    end
+    
+    local flags = e:getFlags()
+    
+    -- Detect shift key press (not release)
+    if flags.shift and not prevFlags.shift then
+        local now = hs.timer.secondsSinceEpoch()
+        local timeSinceLastShift = now - lastShift
+        
+        if timeSinceLastShift < config.threshold then
+            log(string.format("Double-shift detected in %s! Triggering %s", 
+                frontApp:name(), appConfig.action.description))
+            
+            -- Use direct event posting for better performance
+            hs.eventtap.event.newKeyEvent(appConfig.action.modifiers, appConfig.action.key, true):post()
+            hs.timer.usleep(1000) -- Minimal delay
+            hs.eventtap.event.newKeyEvent(appConfig.action.modifiers, appConfig.action.key, false):post()
+        end
+        
+        lastShift = now
+    end
+    
+    prevFlags = flags
+    return false
 end
 
--- Start the event tap
-createEventTap()
+-- Create and start the event tap
+eventTap = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, handleShiftKey)
+if eventTap:start() then
+    log("Event tap started successfully")
+else
+    log("ERROR: Failed to start event tap!")
+end
 
 -- Set up a timer to periodically check event tap status
 hs.timer.doEvery(config.logging.checkInterval, function()
