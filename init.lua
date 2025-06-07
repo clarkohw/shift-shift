@@ -18,7 +18,7 @@ local config = {
             action = {
                 modifiers = {"cmd"},
                 key = "G",
-                description = "Quick switcher"
+                description = "Open search"
             }
         }
     },
