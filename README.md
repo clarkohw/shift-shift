@@ -1,8 +1,10 @@
 # shift-shift-tab-search
 
-[Hammerspoon](https://www.hammerspoon.org/) config for macOS that enables double-shift to open Chrome tab search.
+[Hammerspoon](https://www.hammerspoon.org/) config for macOS that enables double-shift to open search in Chrome and Slack.
 
-Binds: `Shift + Shift` → `Cmd + Shift + A`
+Bindings:
+Chrome: `Shift + Shift` → `Cmd + Shift + A`
+Slack: `Shift + Shift` → `Cmd + G`
 
 1. 
 ```
