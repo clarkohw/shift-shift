@@ -1,11 +1,44 @@
-local threshold = 0.25
+-- Configuration
+local config = {
+    -- Time threshold for double-shift detection (in seconds)
+    threshold = 0.25,
+    
+    -- Application specific configurations
+    apps = {
+        chrome = {
+            bundleID = "com.google.Chrome",
+            action = {
+                modifiers = {"cmd", "shift"},
+                key = "A",
+                description = "Open tab search"
+            }
+        },
+        slack = {
+            bundleID = "com.tinyspeck.slackmacgap",
+            action = {
+                modifiers = {"cmd"},
+                key = "G",
+                description = "Quick switcher"
+            }
+        }
+    },
+    
+    -- Logging configuration
+    logging = {
+        enabled = true,
+        checkInterval = 30  -- Status check interval in seconds
+    }
+}
+
 local lastShift  = 0
 local prevFlags  = {}
 local eventTap = nil
 
 -- Logging function with timestamp
 local function log(message)
-    print(string.format("[%s] %s", os.date("%H:%M:%S"), message))
+    if config.logging.enabled then
+        print(string.format("[%s] %s", os.date("%H:%M:%S"), message))
+    end
 end
 
 -- Debug: Log application switches
@@ -31,6 +64,16 @@ local function checkEventTapStatus()
     end
 end
 
+-- Helper function to find app config by bundle ID
+local function getAppConfigByBundleID(bundleID)
+    for _, app in pairs(config.apps) do
+        if app.bundleID == bundleID then
+            return app
+        end
+    end
+    return nil
+end
+
 -- Create the event tap
 eventTap = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, function(e)
     -- Check if event tap is still enabled (defensive programming)
@@ -51,9 +94,10 @@ eventTap = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, function(e)
     log(string.format("Event received - Frontmost app: %s (%s)", 
         frontApp:name() or "Unknown", bundleID or "No bundle ID"))
     
-    -- Only proceed if Chrome or Slack is frontmost
-    if bundleID ~= "com.google.Chrome" and bundleID ~= "com.tinyspeck.slackmacgap" then
-        log("Not Chrome or Slack - ignoring event")
+    -- Check if the current app is configured
+    local appConfig = getAppConfigByBundleID(bundleID)
+    if not appConfig then
+        log("App not configured - ignoring event")
         prevFlags = e:getFlags()
         return false
     end
@@ -68,16 +112,12 @@ eventTap = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, function(e)
         local timeSinceLastShift = now - lastShift
         
         log(string.format("Shift pressed! Time since last shift: %.3f seconds (threshold: %.3f)", 
-            timeSinceLastShift, threshold))
+            timeSinceLastShift, config.threshold))
         
-        if timeSinceLastShift < threshold then
-            if bundleID == "com.google.Chrome" then
-                log("Double-shift detected in Chrome! Triggering Cmd+Shift+A")
-                hs.eventtap.keyStroke({"cmd","shift"}, "A")
-            elseif bundleID == "com.tinyspeck.slackmacgap" then
-                log("Double-shift detected in Slack! Triggering Cmd+G")
-                hs.eventtap.keyStroke({"cmd"}, "G")
-            end
+        if timeSinceLastShift < config.threshold then
+            log(string.format("Double-shift detected in %s! Triggering %s", 
+                frontApp:name(), appConfig.action.description))
+            hs.eventtap.keyStroke(appConfig.action.modifiers, appConfig.action.key)
         else
             log("Single shift (outside threshold)")
         end
@@ -98,7 +138,7 @@ else
 end
 
 -- Set up a timer to periodically check event tap status
-hs.timer.doEvery(30, function()
+hs.timer.doEvery(config.logging.checkInterval, function()
     checkEventTapStatus()
     log(string.format("Status check - Event tap enabled: %s", 
         tostring(eventTap and eventTap:isEnabled())))
@@ -106,6 +146,10 @@ end)
 
 -- Log initial state
 log("Script initialized with the following settings:")
-log(string.format("  Threshold: %.3f seconds", threshold))
-log(string.format("  Chrome action: Cmd+Shift+A"))
-log(string.format("  Slack action: Cmd+G"))
+log(string.format("  Threshold: %.3f seconds", config.threshold))
+for name, app in pairs(config.apps) do
+    log(string.format("  %s: %s (%s)", 
+        name:gsub("^%l", string.upper),
+        app.action.description,
+        table.concat(app.action.modifiers, "+") .. "+" .. app.action.key))
+end
